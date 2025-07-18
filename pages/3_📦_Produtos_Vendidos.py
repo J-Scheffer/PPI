@@ -122,29 +122,46 @@ st.markdown("### 🔄 Giro de Venda por Período")
 opcoes_periodo = [
     "Ano", "Semestre", "Trimestre", "Mês", "Semana", "Dia da Semana", "Data"
 ]
-periodo_selecionado = st.selectbox("Selecionar período de detalhamento:", opcoes_periodo)
+periodo_selecionado = st.selectbox("Selecionar tipo de período:", opcoes_periodo)
 
 df_giro = detalhar_giro_vendas(df_vendas, df_cadastro, periodo_selecionado)
 
+# Lista de períodos únicos para o usuário escolher um período específico
+periodos_disponiveis = df_giro["Periodo"].unique().tolist()
+periodo_especifico = st.selectbox("Selecionar período específico:", periodos_disponiveis)
+
+df_filtrado = df_giro[df_giro["Periodo"] == periodo_especifico]
+
+# Limitar aos 100 itens mais vendidos no período
+df_filtrado = df_filtrado.sort_values(by="Quantidade", ascending=False).head(100)
+
+# Mensagem explicativa
+st.markdown(
+    f"### 🥧 Gráfico de Pizza - Período: {periodo_especifico}\n"
+    "_Exibindo os **100 produtos mais vendidos** no período selecionado._"
+)
+
+# Gráfico de pizza com os dados limitados
+pie_chart = (
+    alt.Chart(df_filtrado)
+    .mark_arc()
+    .encode(
+        theta=alt.Theta(field="Quantidade", type="quantitative"),
+        color=alt.Color(field="Produto", type="nominal"),
+        tooltip=["Produto", "Quantidade"]
+    )
+    .properties(height=500, width=500)
+)
+
+st.altair_chart(pie_chart, use_container_width=True)
+
+
+# Exibe a tabela dos dados usados na pizza
+st.markdown("### 📋 Detalhamento dos Dados do Período Selecionado")
 st.dataframe(
-    df_giro.rename(columns={
-        "Periodo": "Período",
+    df_filtrado.rename(columns={
         "Produto": "Produto",
         "Quantidade": "Qtd Vendida"
     }),
     use_container_width=True
 )
-
-grafico_giro = (
-    alt.Chart(df_giro)
-    .mark_bar()
-    .encode(
-        x=alt.X("Quantidade:Q", title="Qtd Vendida"),
-        y=alt.Y("Produto:N", sort="-x"),
-        color=alt.Color("Periodo:N", legend=alt.Legend(title="Período")),
-        tooltip=["Periodo", "Produto", "Quantidade"]
-    )
-    .properties(height=500)
-)
-
-st.altair_chart(grafico_giro, use_container_width=True)
