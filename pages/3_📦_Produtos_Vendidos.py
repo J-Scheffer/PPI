@@ -20,97 +20,111 @@ st.title("📦 Produtos Vendidos")
 df_vendas = validar_df("df_vendas", carregar_df_vendas)
 df_cadastro = validar_df("df_cadastro", carregar_df_cadastro)
 
+# Verificar colunas disponíveis para debug
+st.sidebar.write("Colunas em df_vendas:", df_vendas.columns.tolist())
+st.sidebar.write("Colunas em df_cadastro:", df_cadastro.columns.tolist())
+
 # ---------------- FUNÇÕES AUXILIARES ----------------
 
 @st.cache_data
 def preparar_produtos(df_vendas: pd.DataFrame, df_cadastro: pd.DataFrame) -> pd.DataFrame:
     """Prepara os dados de produtos vendidos com formatação adequada."""
-    df = calcular_vendas_agrupadas(df_vendas)
-    
-    # Verificar produtos não cadastrados antes do merge
-    produtos_nao_cadastrados = df[~df['ProCod'].isin(df_cadastro['ProCod'])]['ProCod'].unique()
-    if len(produtos_nao_cadastrados) > 0:
-        st.warning(f"Atenção: {len(produtos_nao_cadastrados)} produtos nas vendas não estão no cadastro")
-    
-    # Merge mantendo todos os produtos das vendas (left join)
-    df = pd.merge(
-        df,
-        df_cadastro[["ProCod", "ProNom"]].drop_duplicates(subset=["ProCod"]),
-        how="left",
-        on="ProCod"
-    )
-    
-    # Preencher nomes faltantes com "PRODUTO NÃO CADASTRADO"
-    df["ProNom"] = df["ProNom"].fillna("PRODUTO NÃO CADASTRADO")
-    df = df.rename(columns={"ProNom": "Produto"})
-    
-    # Garantir que as colunas numéricas estão corretas
-    df["TotalItem"] = pd.to_numeric(df["TotalItem"], errors="coerce")
-    df["Quantidade"] = pd.to_numeric(df["Quantidade"], errors="coerce")
-    df["Preco"] = pd.to_numeric(df["Preco"], errors="coerce")
-    
-    # Remover linhas com valores inválidos nas colunas numéricas essenciais
-    df = df.dropna(subset=["TotalItem", "Quantidade", "Preco"])
-    
-    df = df.sort_values(by="TotalItem", ascending=False)
-    df["TotalFormatado"] = df["TotalItem"].apply(
-        lambda x: formatar_moeda_brasileira(x) if not pd.isna(x) else "R$ 0,00"
-    )
-    return df
+    try:
+        df = calcular_vendas_agrupadas(df_vendas)
+        
+        # Verificar colunas essenciais
+        colunas_necessarias = ['ProCod', 'TotalItem', 'Quantidade']
+        for col in colunas_necessarias:
+            if col not in df.columns:
+                st.error(f"❌ Coluna essencial '{col}' não encontrada no DataFrame de vendas")
+                st.stop()
+        
+        # Verificar produtos não cadastrados
+        produtos_nao_cadastrados = df[~df['ProCod'].isin(df_cadastro['ProCod'])]['ProCod'].unique()
+        if len(produtos_nao_cadastrados) > 0:
+            st.warning(f"⚠️ {len(produtos_nao_cadastrados)} produtos nas vendas não estão no cadastro")
+        
+        # Merge mantendo todos os produtos das vendas (left join)
+        df = pd.merge(
+            df,
+            df_cadastro[["ProCod", "ProNom"]].drop_duplicates(subset=["ProCod"]),
+            how="left",
+            on="ProCod"
+        )
+        
+        # Preencher nomes faltantes
+        df["ProNom"] = df["ProNom"].fillna("PRODUTO NÃO CADASTRADO")
+        df = df.rename(columns={"ProNom": "Produto"})
+        
+        # Converter colunas numéricas
+        df["TotalItem"] = pd.to_numeric(df["TotalItem"], errors="coerce")
+        df["Quantidade"] = pd.to_numeric(df["Quantidade"], errors="coerce")
+        
+        # Remover linhas inválidas
+        df = df.dropna(subset=["TotalItem", "Quantidade"])
+        
+        # Formatar valores
+        df = df.sort_values(by="TotalItem", ascending=False)
+        df["TotalFormatado"] = df["TotalItem"].apply(formatar_moeda_brasileira)
+        
+        return df
+        
+    except Exception as e:
+        st.error(f"Erro ao preparar produtos: {str(e)}")
+        st.stop()
 
 @st.cache_data
 def detalhar_giro_vendas(df_vendas: pd.DataFrame, df_cadastro: pd.DataFrame, periodo: str) -> pd.DataFrame:
     """Prepara os dados para análise temporal de vendas por produto."""
-    df = df_vendas.copy()
+    try:
+        df = df_vendas.copy()
 
-    # Verificação e limpeza inicial
-    if "ProNom" in df.columns:
-        df = df.drop(columns=["ProNom"])
-    
-    # Merge mantendo todos os produtos (left join)
-    df = pd.merge(
-        df,
-        df_cadastro[["ProCod", "ProNom"]].drop_duplicates(subset=["ProCod"]),
-        how="left",
-        on="ProCod"
-    )
-    
-    # Preencher nomes faltantes
-    df["ProNom"] = df["ProNom"].fillna("PRODUTO NÃO CADASTRADO")
-    df = df.rename(columns={"ProNom": "Produto"})
+        # Verificar colunas essenciais
+        colunas_necessarias = ['ProCod', 'Quantidade', 'Data']
+        for col in colunas_necessarias:
+            if col not in df.columns:
+                st.error(f"❌ Coluna essencial '{col}' não encontrada no DataFrame de vendas")
+                st.stop()
 
-    # Verificações pós-merge
-    required_cols = ["Produto", "Quantidade", "Data"]
-    for col in required_cols:
-        if col not in df.columns:
-            st.error(f"❌ Coluna '{col}' não encontrada após o merge.")
+        # Merge com nomes de produtos
+        df = pd.merge(
+            df,
+            df_cadastro[["ProCod", "ProNom"]].drop_duplicates(subset=["ProCod"]),
+            how="left",
+            on="ProCod"
+        ).rename(columns={"ProNom": "Produto"})
+        
+        df["Produto"] = df["Produto"].fillna("PRODUTO NÃO CADASTRADO")
+
+        # Converter tipos
+        df["Data"] = pd.to_datetime(df["Data"], errors="coerce")
+        df["Quantidade"] = pd.to_numeric(df["Quantidade"], errors="coerce")
+        df = df.dropna(subset=["Data", "Quantidade", "Produto"])
+
+        # Criar coluna de período
+        if periodo == "Ano":
+            df["Periodo"] = df["Data"].dt.year
+        elif periodo == "Semestre":
+            df["Periodo"] = df["Data"].dt.year.astype(str) + " - S" + ((df["Data"].dt.month - 1) // 6 + 1).astype(str)
+        elif periodo == "Trimestre":
+            df["Periodo"] = df["Data"].dt.year.astype(str) + " - T" + ((df["Data"].dt.month - 1) // 3 + 1).astype(str)
+        elif periodo == "Mês":
+            df["Periodo"] = df["Data"].dt.to_period("M").astype(str)
+        elif periodo == "Semana":
+            df["Periodo"] = df["Data"].dt.strftime("%Y - Semana %U")
+        elif periodo == "Dia da Semana":
+            df["Periodo"] = df["Data"].dt.day_name()
+        elif periodo == "Data":
+            df["Periodo"] = df["Data"].dt.date
+        else:
+            st.error("❌ Período inválido selecionado.")
             st.stop()
 
-    # Conversão e limpeza de dados
-    df["Data"] = pd.to_datetime(df["Data"], errors="coerce")
-    df["Quantidade"] = pd.to_numeric(df["Quantidade"], errors="coerce")
-    df = df.dropna(subset=["Data", "Quantidade", "Produto"])
-
-    # Criação do período
-    if periodo == "Ano":
-        df["Periodo"] = df["Data"].dt.year
-    elif periodo == "Semestre":
-        df["Periodo"] = df["Data"].dt.year.astype(str) + " - S" + ((df["Data"].dt.month - 1) // 6 + 1).astype(str)
-    elif periodo == "Trimestre":
-        df["Periodo"] = df["Data"].dt.year.astype(str) + " - T" + ((df["Data"].dt.month - 1) // 3 + 1).astype(str)
-    elif periodo == "Mês":
-        df["Periodo"] = df["Data"].dt.to_period("M").astype(str)
-    elif periodo == "Semana":
-        df["Periodo"] = df["Data"].dt.strftime("%Y - Semana %U")
-    elif periodo == "Dia da Semana":
-        df["Periodo"] = df["Data"].dt.day_name()
-    elif periodo == "Data":
-        df["Periodo"] = df["Data"].dt.date
-    else:
-        st.error("❌ Período inválido selecionado.")
+        return df.groupby(["Periodo", "Produto"]).agg(Quantidade=("Quantidade", "sum")).reset_index()
+        
+    except Exception as e:
+        st.error(f"Erro ao detalhar giro de vendas: {str(e)}")
         st.stop()
-
-    return df.groupby(["Periodo", "Produto"]).agg(Quantidade=("Quantidade", "sum")).reset_index()
 
 # ---------------- TABELA GERAL ----------------
 df_produtos = preparar_produtos(df_vendas, df_cadastro)
@@ -129,12 +143,12 @@ st.markdown("### 📊 Top Produtos por Valor Vendido")
 top_n = st.slider("Número de produtos no Top", min_value=5, max_value=100, value=10)
 top_df = df_produtos.head(top_n).copy()
 
-# Container com rolagem para a tabela quando tiver mais de 20 itens
+# Tabela com rolagem para mais de 20 itens
 if top_n > 20:
     st.markdown(f"**Mostrando {top_n} produtos (role para ver todos)**")
-    table_height = 500  # Altura fixa com rolagem interna
+    table_height = 500  # Altura fixa com rolagem
 else:
-    table_height = None  # Altura automática sem rolagem
+    table_height = None  # Altura automática
 
 st.dataframe(
     top_df[["Produto", "Quantidade", "TotalFormatado"]]
@@ -143,36 +157,25 @@ st.dataframe(
     height=table_height
 )
 
-# Gráfico mostrando todos os itens selecionados
+# Gráfico de barras
 if not top_df.empty:
-    # Ordenar por TotalItem para garantir a ordem correta
     top_df = top_df.sort_values("TotalItem", ascending=True)
     
-    # Criar gráfico de barras horizontais
     bar_chart = (
         alt.Chart(top_df)
         .mark_bar()
         .encode(
             x=alt.X("TotalItem:Q", title="Total Vendido (R$)"),
-            y=alt.Y(
-                "Produto:N",
-                sort="-x",
-                title="Produto",
-                axis=alt.Axis(labelLimit=300)
-            ),
+            y=alt.Y("Produto:N", sort="-x", title="Produto", axis=alt.Axis(labelLimit=300)),
             tooltip=[
                 alt.Tooltip("Produto", title="Produto"),
                 alt.Tooltip("Quantidade:Q", title="Qtd Vendida"),
                 alt.Tooltip("TotalItem:Q", title="Total Vendido", format=",.2f")
             ],
-            color=alt.Color(
-                "TotalItem:Q",
-                scale=alt.Scale(scheme="greens"),
-                legend=None
-            )
+            color=alt.Color("TotalItem:Q", scale=alt.Scale(scheme="greens"), legend=None)
         )
         .properties(
-            height=max(400, len(top_df) * 20),  # Altura dinâmica
+            height=max(400, len(top_df) * 20),
             title=f"Top {top_n} Produtos por Valor Vendido"
         )
     )
@@ -188,25 +191,16 @@ opcoes_periodo = [
 ]
 periodo_selecionado = st.selectbox("Selecionar tipo de período:", opcoes_periodo)
 
-try:
-    df_giro = detalhar_giro_vendas(df_vendas, df_cadastro, periodo_selecionado)
-    
-    if df_giro.empty:
-        st.warning("Nenhum dado disponível para o período selecionado.")
-        st.stop()
-    
-    # Lista de períodos únicos para seleção
+df_giro = detalhar_giro_vendas(df_vendas, df_cadastro, periodo_selecionado)
+
+if not df_giro.empty:
     periodos_disponiveis = sorted(df_giro["Periodo"].unique().tolist())
     periodo_especifico = st.selectbox("Selecionar período específico:", periodos_disponiveis)
     
     df_filtrado = df_giro[df_giro["Periodo"] == periodo_especifico]
     df_filtrado = df_filtrado.sort_values("Quantidade", ascending=False)
     
-    if df_filtrado.empty:
-        st.warning("Nenhum dado disponível para o período específico selecionado.")
-        st.stop()
-    
-    # Gráfico de pizza com os 100 mais vendidos
+    # Gráfico de pizza (Top 100)
     st.markdown(f"### 🥧 Distribuição de Vendas - {periodo_especifico} (Top 100)")
     pie_chart = (
         alt.Chart(df_filtrado.head(100))
@@ -220,16 +214,12 @@ try:
     )
     st.altair_chart(pie_chart, use_container_width=True)
     
-    # Tabela com TODOS os itens (sem limite)
+    # Tabela completa
     st.markdown(f"### 📋 Detalhamento Completo ({len(df_filtrado)} itens)")
     st.dataframe(
-        df_filtrado.rename(columns={
-            "Produto": "Produto",
-            "Quantidade": "Qtd Vendida"
-        }),
+        df_filtrado.rename(columns={"Quantidade": "Qtd Vendida"}),
         use_container_width=True,
-        height=600  # Altura com rolagem
+        height=600
     )
-
-except Exception as e:
-    st.error(f"Ocorreu um erro ao processar os dados: {str(e)}")
+else:
+    st.warning("Nenhum dado disponível para o período selecionado.")
