@@ -125,6 +125,7 @@ if not top_df.empty:
             y=alt.Y(
                 "Produto:N",
                 sort="-x",
+                title="",
                 axis=alt.Axis(labelLimit=300)
             ),
             tooltip=[
