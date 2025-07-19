@@ -29,11 +29,24 @@ def calcular_metricas_clientes(df_vendas_agrupado: pd.DataFrame) -> Tuple[int, i
         itens_totais=("QuantidadeItens", "sum")
     ).reset_index()
 
-    # Tratar possíveis zeros ou valores nulos para evitar erro de divisão
-    df_group["ticket_medio"] = df_group.apply(
-        lambda row: row["total_vendas"] / row["num_compras"] if pd.notnull(row["num_compras"]) and row["num_compras"] > 0 else 0,
-        axis=1
-    )
+    # DEBUG: mostrar tipos e amostras
+    st.write("📊 Tipos em df_group:")
+    st.write(df_group.dtypes)
+
+    st.write("🔢 Valores únicos de num_compras antes da limpeza:")
+    st.write(df_group["num_compras"].unique())
+
+    # Forçar num_compras a ser numérico e tratar problemas
+    df_group["num_compras"] = pd.to_numeric(df_group["num_compras"], errors="coerce")
+    df_group["num_compras"] = df_group["num_compras"].fillna(0)
+
+    # Calcular ticket médio com proteção contra divisão por zero
+    df_group["ticket_medio"] = df_group["total_vendas"] / df_group["num_compras"].where(df_group["num_compras"] != 0, pd.NA)
+    df_group["ticket_medio"] = df_group["ticket_medio"].fillna(0)
+
+    # DEBUG: valores finais
+    st.write("✅ Dados após tratamento:")
+    st.write(df_group.head())
 
     total_customers = df_group.shape[0]
     returning_customers = df_group[df_group["num_compras"] > 1].shape[0]
@@ -55,11 +68,6 @@ if ignorar_99999:
 
 total_customers, returning_customers, df_clientes = calcular_metricas_clientes(df_vendas_agrupado)
 return_rate = (returning_customers / total_customers * 100) if total_customers else 0
-
-# Debug no deploy
-st.write("Prévia dos dados de clientes agrupados:")
-st.write(df_clientes.head())
-st.write("Valores únicos em 'num_compras':", df_clientes["num_compras"].unique())
 
 # ---------------- EXIBIÇÃO DE KPIs ----------------
 
