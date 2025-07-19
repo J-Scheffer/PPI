@@ -29,7 +29,11 @@ def calcular_metricas_clientes(df_vendas_agrupado: pd.DataFrame) -> Tuple[int, i
         itens_totais=("QuantidadeItens", "sum")
     ).reset_index()
 
-    df_group["ticket_medio"] = df_group["total_vendas"] / df_group["num_compras"]
+    # Tratar possíveis zeros ou valores nulos para evitar erro de divisão
+    df_group["ticket_medio"] = df_group.apply(
+        lambda row: row["total_vendas"] / row["num_compras"] if pd.notnull(row["num_compras"]) and row["num_compras"] > 0 else 0,
+        axis=1
+    )
 
     total_customers = df_group.shape[0]
     returning_customers = df_group[df_group["num_compras"] > 1].shape[0]
@@ -51,6 +55,11 @@ if ignorar_99999:
 
 total_customers, returning_customers, df_clientes = calcular_metricas_clientes(df_vendas_agrupado)
 return_rate = (returning_customers / total_customers * 100) if total_customers else 0
+
+# Debug no deploy
+st.write("Prévia dos dados de clientes agrupados:")
+st.write(df_clientes.head())
+st.write("Valores únicos em 'num_compras':", df_clientes["num_compras"].unique())
 
 # ---------------- EXIBIÇÃO DE KPIs ----------------
 
@@ -99,7 +108,6 @@ chart = (
         tooltip=[
             alt.Tooltip("Cliente", title="Cliente"),
             alt.Tooltip("num_compras:Q", title="Compras"),
-            alt.Tooltip("num_retornos:Q", title="Retornos"),
             alt.Tooltip("ticket_medio:Q", title="Ticket Médio", format=",.2f")
         ]
     )
