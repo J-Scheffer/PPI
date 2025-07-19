@@ -1,58 +1,42 @@
 import streamlit as st
 import pandas as pd
 import altair as alt
-
-from utils.processamento import (
-    calcular_vendas_agrupadas,
-    adicionar_nomes_produtos,
-    carregar_df_vendas,
-    carregar_df_cadastro
-)
-
+import math
+from typing import Tuple
 from utils.moeda import formatar_moeda_brasileira
-from utils.sessao import inicializar_app
+from utils.processamento import carregar_df_cadastro, processa_df_venda_agrupado
+from utils.sessao import inicializar_app, validar_df
 
-st.set_page_config(page_title="Clientes", page_icon="👥")
+# ---------------- CONFIGURAÇÃO INICIAL ----------------
+st.set_page_config(page_title="Dados dos Clientes", layout="wide")
 inicializar_app()
-
 st.title("👥 Análise de Clientes")
 
-# Carregamento de dados
+# ---------------- FUNÇÕES AUXILIARES ----------------
+
 @st.cache_data
+def calcular_metricas_clientes(df_vendas_agrupado: pd.DataFrame) -> Tuple[int, int, pd.DataFrame]:
+    """
+    Calcula estatísticas relacionadas aos clientes:
+    - Total de clientes
+    - Quantos retornaram (mais de uma compra)
+    - DataFrame com métricas por cliente
+    """
+    df = df_vendas_agrupado.copy()
 
-def carregar_dados():
-    try:
-        df_vendas = carregar_df_vendas()
-        df_cadastro = carregar_df_cadastro()
+    # Garante que as colunas numéricas são tratadas corretamente
+    df["TotalVenda"] = pd.to_numeric(df["TotalVenda"], errors="coerce")
+    df["QuantidadeItens"] = pd.to_numeric(df["QuantidadeItens"], errors="coerce")
 
-        if df_vendas is None or df_vendas.empty:
-            st.error("Erro: Dados de vendas não carregados corretamente.")
-            return None, None
+    df_group = df.groupby("Cliente").agg(
+        total_vendas=("TotalVenda", "sum"),
+        num_compras=("Data", "count"),
+        itens_totais=("QuantidadeItens", "sum")
+    ).reset_index()
 
-        if df_cadastro is None or df_cadastro.empty:
-            st.error("Erro: Dados de cadastro não carregados corretamente.")
-            return None, None
-
-        return df_vendas, df_cadastro
-
-    except Exception as e:
-        st.error(f"Erro ao carregar dados: {e}")
-        return None, None
-
-# Métricas
-@st.cache_data
-
-def calcular_metricas_clientes(df):
-    df_group = df.groupby("CliCod").agg({
-        "NumNota": "nunique",
-        "ValorTotal": "sum"
-    }).rename(columns={
-        "NumNota": "num_compras",
-        "ValorTotal": "total_vendas"
-    }).reset_index()
-
+    # Cálculo seguro do ticket médio
     df_group["ticket_medio"] = df_group.apply(
-        lambda row: row["total_vendas"] / row["num_compras"] if pd.notnull(row["num_compras"]) and row["num_compras"] > 0 else 0,
+        lambda row: row["total_vendas"] / row["num_compras"] if row["num_compras"] > 0 else 0,
         axis=1
     )
 
@@ -61,32 +45,93 @@ def calcular_metricas_clientes(df):
 
     return total_customers, returning_customers, df_group
 
-# Processamento
+# ---------------- CARREGAMENTO DE DADOS ----------------
 
-df_vendas, df_cadastro = carregar_dados()
+# Usando a abordagem mais segura do segundo código
+if "df_vendas_agrupado" not in st.session_state:
+    processa_df_venda_agrupado()
 
-if df_vendas is not None and df_cadastro is not None:
-    df_vendas = adicionar_nomes_produtos(df_vendas, df_cadastro)
-    df_vendas_agrupado = calcular_vendas_agrupadas(df_vendas)
+df_vendas_agrupado = st.session_state.get("df_vendas_agrupado")
+if not isinstance(df_vendas_agrupado, pd.DataFrame) or df_vendas_agrupado.empty:
+    st.error("❌ O DataFrame 'df_vendas_agrupado' não está disponível ou está vazio.")
+    st.stop()
 
-    total_customers, returning_customers, df_clientes = calcular_metricas_clientes(df_vendas_agrupado)
+df_cadastro = validar_df("df_cadastro", carregar_df_cadastro)
 
-    st.subheader("Métricas Gerais")
-    col1, col2 = st.columns(2)
-    col1.metric("Total de Clientes", total_customers)
-    col2.metric("Clientes que Recompraram", returning_customers)
+# ---------------- FILTRO DE CLIENTES ----------------
 
-    st.subheader("Ticket Médio por Cliente")
-    df_top_ticket = df_clientes.sort_values("ticket_medio", ascending=False).head(10)
+ignorar_99999 = st.checkbox("Ignorar cliente 99999", value=True)
+if ignorar_99999:
+    df_vendas_agrupado = df_vendas_agrupado[df_vendas_agrupado["Cliente"] != 99999]
 
-    chart = alt.Chart(df_top_ticket).mark_bar().encode(
-        x=alt.X("ticket_medio:Q", title="Ticket Médio", axis=alt.Axis(format=",.2f")),
-        y=alt.Y("CliCod:N", sort="-x", title="Código do Cliente")
-    ).properties(width=700, height=400)
+# ---------------- CÁLCULO DE MÉTRICAS ----------------
 
+total_customers, returning_customers, df_clientes = calcular_metricas_clientes(df_vendas_agrupado)
+
+# Cálculo seguro da taxa de retorno
+return_rate = 0
+if total_customers > 0:
+    return_rate = (returning_customers / total_customers * 100)
+
+# ---------------- EXIBIÇÃO DE KPIs ----------------
+
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("Clientes", total_customers)
+col2.metric("Clientes Retornaram", returning_customers)
+col3.metric("Taxa de Retorno", f"{return_rate:.1f}%")
+col4.metric("Compras Totais", df_vendas_agrupado.shape[0])
+
+st.markdown("---")
+
+# ---------------- TABELA DE CLIENTES ----------------
+
+st.markdown("### 📋 Perfil dos Clientes")
+
+df_clientes = df_clientes.sort_values("total_vendas", ascending=False)
+
+# Formatação segura dos valores monetários
+df_clientes["total_vendas_fmt"] = df_clientes["total_vendas"].apply(
+    lambda x: formatar_moeda_brasileira(x) if not pd.isna(x) else "R$ 0,00"
+)
+df_clientes["ticket_medio_fmt"] = df_clientes["ticket_medio"].apply(
+    lambda x: formatar_moeda_brasileira(x) if not pd.isna(x) else "R$ 0,00"
+)
+
+df_display = df_clientes.rename(columns={
+    "Cliente": "Cliente",
+    "total_vendas_fmt": "Total Vendido",
+    "num_compras": "Compras",
+    "ticket_medio_fmt": "Ticket Médio",
+    "itens_totais": "Itens Totais"
+})[["Cliente", "Total Vendido", "Compras", "Ticket Médio", "Itens Totais"]]
+
+st.dataframe(df_display, use_container_width=True)
+
+# ---------------- GRÁFICO TOP CLIENTES ----------------
+
+st.markdown("### 📊 Top Clientes por Valor Vendido")
+
+top_n = st.slider("Top N Clientes", min_value=5, max_value=50, value=10, step=1)
+top_df = df_clientes.head(top_n).copy()
+
+# Verificação segura para o gráfico
+if not top_df.empty:
+    chart = (
+        alt.Chart(top_df)
+        .mark_bar()
+        .encode(
+            x=alt.X("total_vendas:Q", title="Total Vendido"),
+            y=alt.Y("Cliente:N", sort="-x", title="Cliente"),
+            color=alt.Color("total_vendas:Q", scale=alt.Scale(scheme="blues"), legend=None),
+            tooltip=[
+                alt.Tooltip("Cliente", title="Cliente"),
+                alt.Tooltip("num_compras:Q", title="Compras"),
+                alt.Tooltip("ticket_medio:Q", title="Ticket Médio", format=",.2f"),
+                alt.Tooltip("itens_totais:Q", title="Itens Totais")
+            ]
+        )
+        .properties(height=400, title=f"Top {top_n} Clientes por Valor Vendido")
+    )
     st.altair_chart(chart, use_container_width=True)
-
-    st.subheader("Dados de Clientes")
-    st.dataframe(df_clientes)
 else:
-    st.warning("Dados não disponíveis para análise.")
+    st.warning("Não há dados suficientes para exibir o gráfico.")
