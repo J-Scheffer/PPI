@@ -109,19 +109,7 @@ st.markdown("### 📊 Top Produtos por Valor Vendido")
 top_n = st.slider("Número de produtos no Top", min_value=5, max_value=100, value=10)
 top_df = df_produtos.head(top_n).copy()
 
-# Container com rolagem para a tabela quando tiver mais de 20 itens
-if top_n > 20:
-    st.markdown(f"**Mostrando {top_n} produtos (role para ver todos)**")
-    table_height = 500  # Altura fixa com rolagem interna
-else:
-    table_height = None  # Altura automática sem rolagem
 
-st.dataframe(
-    top_df[["Produto", "Quantidade", "TotalFormatado"]]
-    .rename(columns={"Quantidade": "Qtd Vendida", "TotalFormatado": "Total R$"}),
-    use_container_width=True,
-    height=table_height
-)
 
 # Gráfico mostrando todos os itens selecionados
 if not top_df.empty:
@@ -137,7 +125,6 @@ if not top_df.empty:
             y=alt.Y(
                 "Produto:N",
                 sort="-x",
-                title="Produto",
                 axis=alt.Axis(labelLimit=300)
             ),
             tooltip=[
@@ -187,9 +174,9 @@ try:
         st.stop()
     
     # Gráfico de pizza com os 100 mais vendidos
-    st.markdown(f"### 🥧 Distribuição de Vendas - {periodo_especifico} (Top 100)")
+    st.markdown(f"### 🥧 Distribuição de Vendas - {periodo_especifico} (Top 50)")
     pie_chart = (
-        alt.Chart(df_filtrado.head(100))
+        alt.Chart(df_filtrado.head(50))
         .mark_arc()
         .encode(
             theta=alt.Theta("Quantidade:Q", stack=True),
