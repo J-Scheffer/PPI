@@ -26,18 +26,37 @@ df_cadastro = validar_df("df_cadastro", carregar_df_cadastro)
 def preparar_produtos(df_vendas: pd.DataFrame, df_cadastro: pd.DataFrame) -> pd.DataFrame:
     """Prepara os dados de produtos vendidos com formatação adequada."""
     df = calcular_vendas_agrupadas(df_vendas)
-    df = adicionar_nomes_produtos(df, df_cadastro)
+    
+    # Verificar produtos não cadastrados antes do merge
+    produtos_nao_cadastrados = df[~df['ProCod'].isin(df_cadastro['ProCod'])]['ProCod'].unique()
+    if len(produtos_nao_cadastrados) > 0:
+        st.warning(f"Atenção: {len(produtos_nao_cadastrados)} produtos nas vendas não estão no cadastro")
+    
+    # Merge mantendo todos os produtos das vendas (left join)
+    df = pd.merge(
+        df,
+        df_cadastro[["ProCod", "ProNom"]].drop_duplicates(subset=["ProCod"]),
+        how="left",
+        on="ProCod"
+    )
+    
+    # Preencher nomes faltantes com "PRODUTO NÃO CADASTRADO"
+    df["ProNom"] = df["ProNom"].fillna("PRODUTO NÃO CADASTRADO")
     df = df.rename(columns={"ProNom": "Produto"})
     
     # Garantir que as colunas numéricas estão corretas
     df["TotalItem"] = pd.to_numeric(df["TotalItem"], errors="coerce")
     df["Quantidade"] = pd.to_numeric(df["Quantidade"], errors="coerce")
+    df["Preco"] = pd.to_numeric(df["Preco"], errors="coerce")
+    
+    # Remover linhas com valores inválidos nas colunas numéricas essenciais
+    df = df.dropna(subset=["TotalItem", "Quantidade", "Preco"])
     
     df = df.sort_values(by="TotalItem", ascending=False)
     df["TotalFormatado"] = df["TotalItem"].apply(
         lambda x: formatar_moeda_brasileira(x) if not pd.isna(x) else "R$ 0,00"
     )
-    return df.dropna(subset=["TotalItem", "Quantidade"])
+    return df
 
 @st.cache_data
 def detalhar_giro_vendas(df_vendas: pd.DataFrame, df_cadastro: pd.DataFrame, periodo: str) -> pd.DataFrame:
@@ -48,16 +67,17 @@ def detalhar_giro_vendas(df_vendas: pd.DataFrame, df_cadastro: pd.DataFrame, per
     if "ProNom" in df.columns:
         df = df.drop(columns=["ProNom"])
     
-    if "ProCod" not in df.columns or "ProCod" not in df_cadastro.columns:
-        st.error("❌ Coluna 'ProCod' não encontrada nos DataFrames.")
-        st.stop()
-
-    # Merge com nome do produto
-    df = df.merge(
+    # Merge mantendo todos os produtos (left join)
+    df = pd.merge(
+        df,
         df_cadastro[["ProCod", "ProNom"]].drop_duplicates(subset=["ProCod"]),
         how="left",
         on="ProCod"
-    ).rename(columns={"ProNom": "Produto"})
+    )
+    
+    # Preencher nomes faltantes
+    df["ProNom"] = df["ProNom"].fillna("PRODUTO NÃO CADASTRADO")
+    df = df.rename(columns={"ProNom": "Produto"})
 
     # Verificações pós-merge
     required_cols = ["Produto", "Quantidade", "Data"]
