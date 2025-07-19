@@ -103,7 +103,7 @@ def exibir_tabela(df: pd.DataFrame, titulo: Optional[str] = None) -> None:
 # ---------------- KPIs GERAIS ----------------
 
 total_clientes = df_vendas_agrupado["Cliente"].nunique()
-total_vendas = df_vendas_agrupado["TotalVenda"].sum()
+total_vendas = float(df_vendas_agrupado["TotalVenda"].sum())
 
 # DEBUG opcional (seguro)
 st.text(f"DEBUG :: total_clientes = {total_clientes} ({type(total_clientes).__name__})")
