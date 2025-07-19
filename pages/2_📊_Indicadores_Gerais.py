@@ -117,10 +117,6 @@ except Exception as e:
     st.error(f"Erro ao converter total_vendas: {e}")
     total_vendas = 0
 
-# DEBUG opcional (seguro)
-st.text(f"DEBUG :: total_clientes = {total_clientes} ({type(total_clientes).__name__})")
-st.text(f"DEBUG :: total_vendas = {total_vendas} ({type(total_vendas).__name__})")
-
 # Tratamento seguro para divisão
 try:
     total_clientes = float(total_clientes)
