@@ -108,30 +108,57 @@ df_display = df_clientes.rename(columns={
 st.dataframe(df_display, use_container_width=True)
 
 # ---------------- GRÁFICO TOP CLIENTES ----------------
-
 st.markdown("### 📊 Top Clientes por Valor Vendido")
 
 top_n = st.slider("Top N Clientes", min_value=5, max_value=50, value=10, step=1)
 top_df = df_clientes.head(top_n).copy()
 
-# Verificação segura para o gráfico
+# Ajustes para o gráfico
 if not top_df.empty:
+    # Ajustar altura dinamicamente baseado no número de clientes
+    chart_height = max(300, top_n * 25)  # Mínimo 300px, 25px por cliente
+    
     chart = (
         alt.Chart(top_df)
-        .mark_bar()
+        .mark_bar(
+            cornerRadiusTopLeft=3,
+            cornerRadiusTopRight=3,
+            size=20  # Largura das barras
+        )
         .encode(
-            x=alt.X("total_vendas:Q", title="Total Vendido"),
-            y=alt.Y("Cliente:N", sort="-x", title="Cliente"),
-            color=alt.Color("total_vendas:Q", scale=alt.Scale(scheme="blues"), legend=None),
+            x=alt.X("total_vendas:Q", 
+                   title="Total Vendido (R$)",
+                   axis=alt.Axis(format=",.2f")),
+            y=alt.Y("Cliente:N", 
+                   sort="-x",
+                   title="Clientes",
+                   axis=alt.Axis(labelLimit=200)),  # Aumentar limite para labels longos
+            color=alt.Color("total_vendas:Q",
+                          legend=None,
+                          scale=alt.Scale(scheme="blues")),
             tooltip=[
-                alt.Tooltip("Cliente", title="Cliente"),
-                alt.Tooltip("num_compras:Q", title="Compras"),
+                alt.Tooltip("Cliente", title="ID Cliente"),
+                alt.Tooltip("total_vendas:Q", title="Total Vendido", format=",.2f"),
+                alt.Tooltip("num_compras:Q", title="N° de Compras"),
                 alt.Tooltip("ticket_medio:Q", title="Ticket Médio", format=",.2f"),
-                alt.Tooltip("itens_totais:Q", title="Itens Totais")
+                alt.Tooltip("itens_totais:Q", title="Itens Comprados")
             ]
         )
-        .properties(height=400, title=f"Top {top_n} Clientes por Valor Vendido")
+        .properties(
+            height=chart_height,
+            width=800,  # Largura fixa para melhor visualização
+            title=f"Top {top_n} Clientes por Valor Vendido"
+        )
+        .configure_axis(
+            grid=False,
+            labelFontSize=12,
+            titleFontSize=14
+        )
+        .configure_view(
+            strokeWidth=0  # Remove borda
+        )
     )
+    
     st.altair_chart(chart, use_container_width=True)
 else:
     st.warning("Não há dados suficientes para exibir o gráfico.")
