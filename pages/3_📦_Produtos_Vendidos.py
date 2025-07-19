@@ -104,60 +104,56 @@ st.dataframe(
 )
 
 # ---------------- TOP N ----------------
+# ---------------- TOP N ----------------
 st.markdown("### 📊 Top Produtos por Valor Vendido")
 
 top_n = st.slider("Número de produtos no Top", min_value=5, max_value=100, value=10)
 top_df = df_produtos.head(top_n).copy()
 
-# Container com rolagem para o gráfico
-with st.container():
-    st.write(f"**Top {top_n} Produtos por Valor Vendido**")
+# Tabela fixa com 20 itens e rolagem
+st.markdown("**Tabela dos 20 principais** (role para ver mais)")
+st.dataframe(
+    top_df.head(20)[["Produto", "Quantidade", "TotalFormatado"]]
+    .rename(columns={"Quantidade": "Qtd Vendida", "TotalFormatado": "Total R$"}),
+    use_container_width=True,
+    height=500  # Altura fixa com rolagem interna
+)
+
+# Gráfico mostrando todos os itens selecionados (até 100)
+if not top_df.empty:
+    # Ajustar altura dinamicamente baseado no número de itens
+    chart_height = max(400, len(top_df) * 20)  # Mínimo 400px, 20px por item
     
-    # Criar container com rolagem vertical
-    chart_container = st.container()
-    with chart_container:
-        # Ajustar altura dinamicamente baseado no número de itens
-        chart_height = max(400, top_n * 20)  # Mínimo 400px, 20px por item
-        
-        if not top_df.empty:
-            # Ordenar por TotalItem para garantir a ordem correta
-            top_df = top_df.sort_values("TotalItem", ascending=True)
-            
-            # Criar gráfico de barras horizontais com rolagem
-            bar_chart = (
-                alt.Chart(top_df)
-                .mark_bar()
-                .encode(
-                    x=alt.X("TotalItem:Q", title="Total Vendido (R$)"),
-                    y=alt.Y(
-                        "Produto:N",
-                        sort="-x",
-                        title="Produto",
-                        axis=alt.Axis(labelLimit=300)  # Aumenta o limite para labels longos
-                    ),
-                    tooltip=[
-                        alt.Tooltip("Produto", title="Produto"),
-                        alt.Tooltip("Quantidade:Q", title="Qtd Vendida"),
-                        alt.Tooltip("TotalItem:Q", title="Total Vendido", format=",.2f")
-                    ],
-                    color=alt.Color(
-                        "TotalItem:Q",
-                        scale=alt.Scale(scheme="greens"),
-                        legend=None
-                    )
-                )
-                .properties(
-                    height=chart_height,
-                    width=800
-                )
-                .configure_axisX(grid=False)
-                .configure_axisY(grid=False)
-                .configure_view(strokeWidth=0)
+    bar_chart = (
+        alt.Chart(top_df)
+        .mark_bar()
+        .encode(
+            x=alt.X("TotalItem:Q", title="Total Vendido (R$)"),
+            y=alt.Y(
+                "Produto:N",
+                sort="-x",
+                title="Produto",
+                axis=alt.Axis(labelLimit=300)
+            ),
+            tooltip=[
+                alt.Tooltip("Produto", title="Produto"),
+                alt.Tooltip("Quantidade:Q", title="Qtd Vendida"),
+                alt.Tooltip("TotalItem:Q", title="Total Vendido", format=",.2f")
+            ],
+            color=alt.Color(
+                "TotalItem:Q",
+                scale=alt.Scale(scheme="greens"),
+                legend=None
             )
-            
-            st.altair_chart(bar_chart, use_container_width=True)
-        else:
-            st.warning("Não há dados suficientes para exibir o gráfico.")
+        )
+        .properties(
+            height=chart_height,
+            title=f"Top {top_n} Produtos por Valor Vendido"
+        )
+    )
+    st.altair_chart(bar_chart, use_container_width=True)
+else:
+    st.warning("Não há dados suficientes para exibir o gráfico.")
 
 # ---------------- GIRO DE VENDAS ----------------
 st.markdown("### 🔄 Giro de Venda por Período")
@@ -179,43 +175,36 @@ try:
     periodo_especifico = st.selectbox("Selecionar período específico:", periodos_disponiveis)
     
     df_filtrado = df_giro[df_giro["Periodo"] == periodo_especifico]
-    df_filtrado = df_filtrado.sort_values("Quantidade", ascending=False).head(100)
+    df_filtrado = df_filtrado.sort_values("Quantidade", ascending=False)
     
     if df_filtrado.empty:
         st.warning("Nenhum dado disponível para o período específico selecionado.")
         st.stop()
     
-    # Gráfico de pizza com container de rolagem
-    st.markdown(f"### 🥧 Distribuição de Vendas - {periodo_especifico}")
-    
-    with st.container():
-        # Ajustar altura baseado no número de itens
-        pie_height = max(600, len(df_filtrado) * 5)  # Ajuste dinâmico
-        
-        pie_chart = (
-            alt.Chart(df_filtrado)
-            .mark_arc()
-            .encode(
-                theta=alt.Theta("Quantidade:Q", stack=True),
-                color=alt.Color("Produto:N", legend=None),
-                tooltip=["Produto:N", "Quantidade:Q"]
-            )
-            .properties(height=pie_height)
+    # Gráfico de pizza com os 100 mais vendidos
+    st.markdown(f"### 🥧 Distribuição de Vendas - {periodo_especifico} (Top 100)")
+    pie_chart = (
+        alt.Chart(df_filtrado.head(100))
+        .mark_arc()
+        .encode(
+            theta=alt.Theta("Quantidade:Q", stack=True),
+            color=alt.Color("Produto:N", legend=None),
+            tooltip=["Produto:N", "Quantidade:Q"]
         )
-        
-        st.altair_chart(pie_chart, use_container_width=True)
+        .properties(height=500)
+    )
+    st.altair_chart(pie_chart, use_container_width=True)
     
-    # Tabela de dados com rolagem
-    st.markdown("### 📋 Detalhamento dos Dados (100 itens mais vendidos)")
-    with st.container():
-        st.dataframe(
-            df_filtrado.rename(columns={
-                "Produto": "Produto",
-                "Quantidade": "Qtd Vendida"
-            }),
-            use_container_width=True,
-            height=600  # Altura fixa com rolagem interna
-        )
+    # Tabela com TODOS os itens (sem limite)
+    st.markdown(f"### 📋 Detalhamento Completo ({len(df_filtrado)} itens)")
+    st.dataframe(
+        df_filtrado.rename(columns={
+            "Produto": "Produto",
+            "Quantidade": "Qtd Vendida"
+        }),
+        use_container_width=True,
+        height=600  # Altura com rolagem
+    )
 
 except Exception as e:
     st.error(f"Ocorreu um erro ao processar os dados: {str(e)}")
