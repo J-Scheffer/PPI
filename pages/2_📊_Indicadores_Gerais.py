@@ -105,19 +105,19 @@ def exibir_tabela(df: pd.DataFrame, titulo: Optional[str] = None) -> None:
 total_clientes = df_vendas_agrupado["Cliente"].nunique()
 total_vendas = df_vendas_agrupado["TotalVenda"].sum()
 
-# DEBUG: Mostra os tipos e valores
-st.write("DEBUG :: total_clientes =", total_clientes, " | type:", type(total_clientes))
-st.write("DEBUG :: total_vendas =", total_vendas, " | type:", type(total_vendas))
+# DEBUG opcional (seguro)
+st.text(f"DEBUG :: total_clientes = {total_clientes} ({type(total_clientes).__name__})")
+st.text(f"DEBUG :: total_vendas = {total_vendas} ({type(total_vendas).__name__})")
 
-# Sanitiza os dados para garantir que são números válidos
+# Tratamento seguro para divisão
 try:
     total_clientes = float(total_clientes)
     total_vendas = float(total_vendas)
 
-    if total_clientes > 0:
-        ticket_medio = total_vendas / total_clientes
-    else:
+    if math.isnan(total_clientes) or math.isnan(total_vendas) or total_clientes == 0:
         ticket_medio = 0
+    else:
+        ticket_medio = total_vendas / total_clientes
 except Exception as e:
     st.error(f"Erro ao calcular ticket médio: {e}")
     ticket_medio = 0
