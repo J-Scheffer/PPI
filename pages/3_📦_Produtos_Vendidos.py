@@ -24,43 +24,54 @@ df_cadastro = validar_df("df_cadastro", carregar_df_cadastro)
 
 @st.cache_data
 def preparar_produtos(df_vendas: pd.DataFrame, df_cadastro: pd.DataFrame) -> pd.DataFrame:
+    """Prepara os dados de produtos vendidos com formatação adequada."""
     df = calcular_vendas_agrupadas(df_vendas)
     df = adicionar_nomes_produtos(df, df_cadastro)
     df = df.rename(columns={"ProNom": "Produto"})
+    
+    # Garantir que as colunas numéricas estão corretas
+    df["TotalItem"] = pd.to_numeric(df["TotalItem"], errors="coerce")
+    df["Quantidade"] = pd.to_numeric(df["Quantidade"], errors="coerce")
+    
     df = df.sort_values(by="TotalItem", ascending=False)
-    df["TotalFormatado"] = df["TotalItem"].map(formatar_moeda_brasileira)
-    return df
+    df["TotalFormatado"] = df["TotalItem"].apply(
+        lambda x: formatar_moeda_brasileira(x) if not pd.isna(x) else "R$ 0,00"
+    )
+    return df.dropna(subset=["TotalItem", "Quantidade"])
 
 @st.cache_data
 def detalhar_giro_vendas(df_vendas: pd.DataFrame, df_cadastro: pd.DataFrame, periodo: str) -> pd.DataFrame:
+    """Prepara os dados para análise temporal de vendas por produto."""
     df = df_vendas.copy()
 
-    # Remover ProNom duplicado da tabela de vendas (evita conflito no merge)
+    # Verificação e limpeza inicial
     if "ProNom" in df.columns:
         df = df.drop(columns=["ProNom"])
+    
+    if "ProCod" not in df.columns or "ProCod" not in df_cadastro.columns:
+        st.error("❌ Coluna 'ProCod' não encontrada nos DataFrames.")
+        st.stop()
 
     # Merge com nome do produto
-    df = df.merge(df_cadastro[["ProCod", "ProNom"]], how="left", on="ProCod")
-    df = df.rename(columns={"ProNom": "Produto"})
+    df = df.merge(
+        df_cadastro[["ProCod", "ProNom"]].drop_duplicates(subset=["ProCod"]),
+        how="left",
+        on="ProCod"
+    ).rename(columns={"ProNom": "Produto"})
 
-    # Verificações
-    if "Produto" not in df.columns or df["Produto"].isna().all():
-        st.error("❌ Coluna 'Produto' não existe ou está totalmente vazia após o merge.")
-        st.stop()
+    # Verificações pós-merge
+    required_cols = ["Produto", "Quantidade", "Data"]
+    for col in required_cols:
+        if col not in df.columns:
+            st.error(f"❌ Coluna '{col}' não encontrada após o merge.")
+            st.stop()
 
-    if "Quantidade" not in df.columns:
-        st.error("❌ Coluna 'Quantidade' não encontrada no DataFrame de vendas.")
-        st.stop()
-
-    if "Data" not in df.columns:
-        st.error("❌ Coluna 'Data' não encontrada no DataFrame de vendas.")
-        st.stop()
-
-    # Datas
+    # Conversão e limpeza de dados
     df["Data"] = pd.to_datetime(df["Data"], errors="coerce")
-    df = df.dropna(subset=["Data"])
+    df["Quantidade"] = pd.to_numeric(df["Quantidade"], errors="coerce")
+    df = df.dropna(subset=["Data", "Quantidade", "Produto"])
 
-    # Criar coluna de período
+    # Criação do período
     if periodo == "Ano":
         df["Periodo"] = df["Data"].dt.year
     elif periodo == "Semestre":
@@ -79,10 +90,7 @@ def detalhar_giro_vendas(df_vendas: pd.DataFrame, df_cadastro: pd.DataFrame, per
         st.error("❌ Período inválido selecionado.")
         st.stop()
 
-    # Agrupamento
-    df_grouped = df.groupby(["Periodo", "Produto"]).agg(Quantidade=("Quantidade", "sum")).reset_index()
-
-    return df_grouped
+    return df.groupby(["Periodo", "Produto"]).agg(Quantidade=("Quantidade", "sum")).reset_index()
 
 # ---------------- TABELA GERAL ----------------
 df_produtos = preparar_produtos(df_vendas, df_cadastro)
@@ -91,30 +99,56 @@ st.markdown("### 📝 Lista de Produtos Vendidos")
 st.dataframe(
     df_produtos[["Produto", "Quantidade", "TotalFormatado"]]
     .rename(columns={"Quantidade": "Qtd Vendida", "TotalFormatado": "Total R$"}),
-    use_container_width=True
+    use_container_width=True,
+    height=400
 )
 
 # ---------------- TOP N ----------------
-top_n = st.slider("Número de produtos no Top", min_value=5, max_value=100, value=10)
-top_df = df_produtos.head(top_n)
+st.markdown("### 📊 Top Produtos por Valor Vendido")
 
-st.markdown(f"### 📊 Top {top_n} Produtos por Valor Vendido")
-bar_chart = (
-    alt.Chart(top_df)
-    .mark_bar()
-    .encode(
-        x=alt.X("TotalItem:Q", title="Total Vendido"),
-        y=alt.Y("Produto:N", sort="-x", title="Produto"),
-        tooltip=[
-            alt.Tooltip("Produto", title="Produto"),
-            alt.Tooltip("Quantidade:Q", title="Qtd Vendida"),
-            alt.Tooltip("TotalItem:Q", title="Total Vendido", format=",.2f")
-        ],
-        color=alt.Color("TotalItem:Q", scale=alt.Scale(scheme="greens"), legend=None)
+top_n = st.slider("Número de produtos no Top", min_value=5, max_value=100, value=10)
+top_df = df_produtos.head(top_n).copy()
+
+# Verificação e limpeza dos dados para o gráfico
+if not top_df.empty:
+    # Ordenar por TotalItem para garantir a ordem correta
+    top_df = top_df.sort_values("TotalItem", ascending=True)
+    
+    # Criar gráfico de barras horizontais
+    bar_chart = (
+        alt.Chart(top_df)
+        .mark_bar()
+        .encode(
+            x=alt.X("TotalItem:Q", title="Total Vendido (R$)"),
+            y=alt.Y(
+                "Produto:N",
+                sort="-x",
+                title="Produto",
+                axis=alt.Axis(labelLimit=300)  # Aumenta o limite para labels longos
+            ),
+            tooltip=[
+                alt.Tooltip("Produto", title="Produto"),
+                alt.Tooltip("Quantidade:Q", title="Qtd Vendida"),
+                alt.Tooltip("TotalItem:Q", title="Total Vendido", format=",.2f")
+            ],
+            color=alt.Color(
+                "TotalItem:Q",
+                scale=alt.Scale(scheme="greens"),
+                legend=None
+            )
+        )
+        .properties(
+            height=500,
+            title=f"Top {top_n} Produtos por Valor Vendido"
+        )
+        .configure_axisX(grid=False)
+        .configure_axisY(grid=False)
+        .configure_view(strokeWidth=0)
     )
-    .properties(height=400)
-)
-st.altair_chart(bar_chart, use_container_width=True)
+    
+    st.altair_chart(bar_chart, use_container_width=True)
+else:
+    st.warning("Não há dados suficientes para exibir o gráfico.")
 
 # ---------------- GIRO DE VENDAS ----------------
 st.markdown("### 🔄 Giro de Venda por Período")
@@ -124,44 +158,50 @@ opcoes_periodo = [
 ]
 periodo_selecionado = st.selectbox("Selecionar tipo de período:", opcoes_periodo)
 
-df_giro = detalhar_giro_vendas(df_vendas, df_cadastro, periodo_selecionado)
-
-# Lista de períodos únicos para o usuário escolher um período específico
-periodos_disponiveis = df_giro["Periodo"].unique().tolist()
-periodo_especifico = st.selectbox("Selecionar período específico:", periodos_disponiveis)
-
-df_filtrado = df_giro[df_giro["Periodo"] == periodo_especifico]
-
-# Limitar aos 100 itens mais vendidos no período
-df_filtrado = df_filtrado.sort_values(by="Quantidade", ascending=False).head(100)
-
-# Mensagem explicativa
-st.markdown(
-    f"### 🥧 Gráfico de Pizza - Período: {periodo_especifico}\n"
-    "_Exibindo os **100 produtos mais vendidos** no período selecionado._"
-)
-
-# Gráfico de pizza com os dados limitados
-pie_chart = (
-    alt.Chart(df_filtrado)
-    .mark_arc()
-    .encode(
-        theta=alt.Theta(field="Quantidade", type="quantitative"),
-        color=alt.Color(field="Produto", type="nominal"),
-        tooltip=["Produto", "Quantidade"]
+try:
+    df_giro = detalhar_giro_vendas(df_vendas, df_cadastro, periodo_selecionado)
+    
+    if df_giro.empty:
+        st.warning("Nenhum dado disponível para o período selecionado.")
+        st.stop()
+    
+    # Lista de períodos únicos para seleção
+    periodos_disponiveis = sorted(df_giro["Periodo"].unique().tolist())
+    periodo_especifico = st.selectbox("Selecionar período específico:", periodos_disponiveis)
+    
+    df_filtrado = df_giro[df_giro["Periodo"] == periodo_especifico]
+    df_filtrado = df_filtrado.sort_values("Quantidade", ascending=False).head(100)
+    
+    if df_filtrado.empty:
+        st.warning("Nenhum dado disponível para o período específico selecionado.")
+        st.stop()
+    
+    # Gráfico de pizza
+    st.markdown(f"### 🥧 Distribuição de Vendas - {periodo_especifico}")
+    
+    pie_chart = (
+        alt.Chart(df_filtrado.head(20))  # Limitar a 20 itens para melhor visualização
+        .mark_arc()
+        .encode(
+            theta=alt.Theta("Quantidade:Q", stack=True),
+            color=alt.Color("Produto:N", legend=None),
+            tooltip=["Produto:N", "Quantidade:Q"]
+        )
+        .properties(height=500)
     )
-    .properties(height=500, width=500)
-)
+    
+    st.altair_chart(pie_chart, use_container_width=True)
+    
+    # Tabela de dados
+    st.markdown("### 📋 Detalhamento dos Dados")
+    st.dataframe(
+        df_filtrado.rename(columns={
+            "Produto": "Produto",
+            "Quantidade": "Qtd Vendida"
+        }),
+        use_container_width=True,
+        height=400
+    )
 
-st.altair_chart(pie_chart, use_container_width=True)
-
-
-# Exibe a tabela dos dados usados na pizza
-st.markdown("### 📋 Detalhamento dos Dados do Período Selecionado")
-st.dataframe(
-    df_filtrado.rename(columns={
-        "Produto": "Produto",
-        "Quantidade": "Qtd Vendida"
-    }),
-    use_container_width=True
-)
+except Exception as e:
+    st.error(f"Ocorreu um erro ao processar os dados: {str(e)}")
