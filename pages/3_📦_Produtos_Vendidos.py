@@ -109,46 +109,55 @@ st.markdown("### 📊 Top Produtos por Valor Vendido")
 top_n = st.slider("Número de produtos no Top", min_value=5, max_value=100, value=10)
 top_df = df_produtos.head(top_n).copy()
 
-# Verificação e limpeza dos dados para o gráfico
-if not top_df.empty:
-    # Ordenar por TotalItem para garantir a ordem correta
-    top_df = top_df.sort_values("TotalItem", ascending=True)
+# Container com rolagem para o gráfico
+with st.container():
+    st.write(f"**Top {top_n} Produtos por Valor Vendido**")
     
-    # Criar gráfico de barras horizontais
-    bar_chart = (
-        alt.Chart(top_df)
-        .mark_bar()
-        .encode(
-            x=alt.X("TotalItem:Q", title="Total Vendido (R$)"),
-            y=alt.Y(
-                "Produto:N",
-                sort="-x",
-                title="Produto",
-                axis=alt.Axis(labelLimit=300)  # Aumenta o limite para labels longos
-            ),
-            tooltip=[
-                alt.Tooltip("Produto", title="Produto"),
-                alt.Tooltip("Quantidade:Q", title="Qtd Vendida"),
-                alt.Tooltip("TotalItem:Q", title="Total Vendido", format=",.2f")
-            ],
-            color=alt.Color(
-                "TotalItem:Q",
-                scale=alt.Scale(scheme="greens"),
-                legend=None
+    # Criar container com rolagem vertical
+    chart_container = st.container()
+    with chart_container:
+        # Ajustar altura dinamicamente baseado no número de itens
+        chart_height = max(400, top_n * 20)  # Mínimo 400px, 20px por item
+        
+        if not top_df.empty:
+            # Ordenar por TotalItem para garantir a ordem correta
+            top_df = top_df.sort_values("TotalItem", ascending=True)
+            
+            # Criar gráfico de barras horizontais com rolagem
+            bar_chart = (
+                alt.Chart(top_df)
+                .mark_bar()
+                .encode(
+                    x=alt.X("TotalItem:Q", title="Total Vendido (R$)"),
+                    y=alt.Y(
+                        "Produto:N",
+                        sort="-x",
+                        title="Produto",
+                        axis=alt.Axis(labelLimit=300)  # Aumenta o limite para labels longos
+                    ),
+                    tooltip=[
+                        alt.Tooltip("Produto", title="Produto"),
+                        alt.Tooltip("Quantidade:Q", title="Qtd Vendida"),
+                        alt.Tooltip("TotalItem:Q", title="Total Vendido", format=",.2f")
+                    ],
+                    color=alt.Color(
+                        "TotalItem:Q",
+                        scale=alt.Scale(scheme="greens"),
+                        legend=None
+                    )
+                )
+                .properties(
+                    height=chart_height,
+                    width=800
+                )
+                .configure_axisX(grid=False)
+                .configure_axisY(grid=False)
+                .configure_view(strokeWidth=0)
             )
-        )
-        .properties(
-            height=500,
-            title=f"Top {top_n} Produtos por Valor Vendido"
-        )
-        .configure_axisX(grid=False)
-        .configure_axisY(grid=False)
-        .configure_view(strokeWidth=0)
-    )
-    
-    st.altair_chart(bar_chart, use_container_width=True)
-else:
-    st.warning("Não há dados suficientes para exibir o gráfico.")
+            
+            st.altair_chart(bar_chart, use_container_width=True)
+        else:
+            st.warning("Não há dados suficientes para exibir o gráfico.")
 
 # ---------------- GIRO DE VENDAS ----------------
 st.markdown("### 🔄 Giro de Venda por Período")
@@ -176,32 +185,37 @@ try:
         st.warning("Nenhum dado disponível para o período específico selecionado.")
         st.stop()
     
-    # Gráfico de pizza
+    # Gráfico de pizza com container de rolagem
     st.markdown(f"### 🥧 Distribuição de Vendas - {periodo_especifico}")
     
-    pie_chart = (
-        alt.Chart(df_filtrado.head(20))  # Limitar a 20 itens para melhor visualização
-        .mark_arc()
-        .encode(
-            theta=alt.Theta("Quantidade:Q", stack=True),
-            color=alt.Color("Produto:N", legend=None),
-            tooltip=["Produto:N", "Quantidade:Q"]
+    with st.container():
+        # Ajustar altura baseado no número de itens
+        pie_height = max(600, len(df_filtrado) * 5)  # Ajuste dinâmico
+        
+        pie_chart = (
+            alt.Chart(df_filtrado)
+            .mark_arc()
+            .encode(
+                theta=alt.Theta("Quantidade:Q", stack=True),
+                color=alt.Color("Produto:N", legend=None),
+                tooltip=["Produto:N", "Quantidade:Q"]
+            )
+            .properties(height=pie_height)
         )
-        .properties(height=500)
-    )
+        
+        st.altair_chart(pie_chart, use_container_width=True)
     
-    st.altair_chart(pie_chart, use_container_width=True)
-    
-    # Tabela de dados
-    st.markdown("### 📋 Detalhamento dos Dados")
-    st.dataframe(
-        df_filtrado.rename(columns={
-            "Produto": "Produto",
-            "Quantidade": "Qtd Vendida"
-        }),
-        use_container_width=True,
-        height=400
-    )
+    # Tabela de dados com rolagem
+    st.markdown("### 📋 Detalhamento dos Dados (100 itens mais vendidos)")
+    with st.container():
+        st.dataframe(
+            df_filtrado.rename(columns={
+                "Produto": "Produto",
+                "Quantidade": "Qtd Vendida"
+            }),
+            use_container_width=True,
+            height=600  # Altura fixa com rolagem interna
+        )
 
 except Exception as e:
     st.error(f"Ocorreu um erro ao processar os dados: {str(e)}")
