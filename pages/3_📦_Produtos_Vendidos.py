@@ -104,26 +104,17 @@ st.dataframe(
 )
 
 # ---------------- TOP N ----------------
-# ---------------- TOP N ----------------
 st.markdown("### 📊 Top Produtos por Valor Vendido")
 
 top_n = st.slider("Número de produtos no Top", min_value=5, max_value=100, value=10)
 top_df = df_produtos.head(top_n).copy()
 
-# Tabela fixa com 20 itens e rolagem
-st.markdown("**Tabela dos 20 principais** (role para ver mais)")
-st.dataframe(
-    top_df.head(20)[["Produto", "Quantidade", "TotalFormatado"]]
-    .rename(columns={"Quantidade": "Qtd Vendida", "TotalFormatado": "Total R$"}),
-    use_container_width=True,
-    height=500  # Altura fixa com rolagem interna
-)
-
-# Gráfico mostrando todos os itens selecionados (até 100)
+# Verificação e limpeza dos dados para o gráfico
 if not top_df.empty:
-    # Ajustar altura dinamicamente baseado no número de itens
-    chart_height = max(400, len(top_df) * 20)  # Mínimo 400px, 20px por item
+    # Ordenar por TotalItem para garantir a ordem correta
+    top_df = top_df.sort_values("TotalItem", ascending=True)
     
+    # Criar gráfico de barras horizontais
     bar_chart = (
         alt.Chart(top_df)
         .mark_bar()
@@ -133,7 +124,7 @@ if not top_df.empty:
                 "Produto:N",
                 sort="-x",
                 title="Produto",
-                axis=alt.Axis(labelLimit=300)
+                axis=alt.Axis(labelLimit=300)  # Aumenta o limite para labels longos
             ),
             tooltip=[
                 alt.Tooltip("Produto", title="Produto"),
@@ -147,10 +138,14 @@ if not top_df.empty:
             )
         )
         .properties(
-            height=chart_height,
+            height=500,
             title=f"Top {top_n} Produtos por Valor Vendido"
         )
+        .configure_axisX(grid=False)
+        .configure_axisY(grid=False)
+        .configure_view(strokeWidth=0)
     )
+    
     st.altair_chart(bar_chart, use_container_width=True)
 else:
     st.warning("Não há dados suficientes para exibir o gráfico.")
@@ -175,16 +170,17 @@ try:
     periodo_especifico = st.selectbox("Selecionar período específico:", periodos_disponiveis)
     
     df_filtrado = df_giro[df_giro["Periodo"] == periodo_especifico]
-    df_filtrado = df_filtrado.sort_values("Quantidade", ascending=False)
+    df_filtrado = df_filtrado.sort_values("Quantidade", ascending=False).head(100)
     
     if df_filtrado.empty:
         st.warning("Nenhum dado disponível para o período específico selecionado.")
         st.stop()
     
-    # Gráfico de pizza com os 100 mais vendidos
-    st.markdown(f"### 🥧 Distribuição de Vendas - {periodo_especifico} (Top 100)")
+    # Gráfico de pizza
+    st.markdown(f"### 🥧 Distribuição de Vendas - {periodo_especifico}")
+    
     pie_chart = (
-        alt.Chart(df_filtrado.head(100))
+        alt.Chart(df_filtrado.head(20))  # Limitar a 20 itens para melhor visualização
         .mark_arc()
         .encode(
             theta=alt.Theta("Quantidade:Q", stack=True),
@@ -193,17 +189,18 @@ try:
         )
         .properties(height=500)
     )
+    
     st.altair_chart(pie_chart, use_container_width=True)
     
-    # Tabela com TODOS os itens (sem limite)
-    st.markdown(f"### 📋 Detalhamento Completo ({len(df_filtrado)} itens)")
+    # Tabela de dados
+    st.markdown("### 📋 Detalhamento dos Dados")
     st.dataframe(
         df_filtrado.rename(columns={
             "Produto": "Produto",
             "Quantidade": "Qtd Vendida"
         }),
         use_container_width=True,
-        height=600  # Altura com rolagem
+        height=400
     )
 
 except Exception as e:
