@@ -103,7 +103,19 @@ def exibir_tabela(df: pd.DataFrame, titulo: Optional[str] = None) -> None:
 # ---------------- KPIs GERAIS ----------------
 
 total_clientes = df_vendas_agrupado["Cliente"].nunique()
-total_vendas = float(df_vendas_agrupado["TotalVenda"].sum())
+
+# Garante que a coluna TotalVenda é numérica, ignorando valores inválidos
+df_vendas_agrupado["TotalVenda"] = pd.to_numeric(df_vendas_agrupado["TotalVenda"], errors="coerce")
+
+# Remove valores NaN antes de somar
+total_vendas_raw = df_vendas_agrupado["TotalVenda"].dropna().sum()
+
+# Agora com segurança convertendo para float
+try:
+    total_vendas = float(total_vendas_raw)
+except Exception as e:
+    st.error(f"Erro ao converter total_vendas: {e}")
+    total_vendas = 0
 
 # DEBUG opcional (seguro)
 st.text(f"DEBUG :: total_clientes = {total_clientes} ({type(total_clientes).__name__})")
