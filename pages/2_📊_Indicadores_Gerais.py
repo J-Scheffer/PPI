@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import math
 from typing import Tuple, Optional
 from utils.processamento import processa_df_venda_agrupado
 from utils.moeda import formatar_moeda_brasileira
@@ -37,7 +38,6 @@ def agrupar_tabelas_temporais(df: pd.DataFrame) -> Tuple[pd.DataFrame, ...]:
         if coluna not in df.columns:
             return pd.DataFrame()
 
-        # Total por grupo
         soma_vendas = df.groupby(coluna)["TotalVenda"].sum()
         quant_clientes = df.groupby(coluna)["Cliente"].nunique()
         media_por_venda = df.groupby(coluna)["TotalVenda"].mean()
@@ -47,12 +47,11 @@ def agrupar_tabelas_temporais(df: pd.DataFrame) -> Tuple[pd.DataFrame, ...]:
             "TotalVenda": soma_vendas.values,
             "QuantClientes": quant_clientes.values,
             "QuantVendas": df.groupby(coluna)["Controle"].count().values,
-            "MediaPorCliente": soma_vendas.values / quant_clientes.values,
+            "MediaPorCliente": soma_vendas.values / quant_clientes.replace(0, pd.NA).fillna(1).values,
             "MediaPorVenda": media_por_venda.values
         })
 
         return agrupado
-
 
     anual     = agrupar("Ano")
     semestre  = agrupar("Semestre")
@@ -62,7 +61,6 @@ def agrupar_tabelas_temporais(df: pd.DataFrame) -> Tuple[pd.DataFrame, ...]:
     dia_sem   = agrupar("DiaSemana")
     diario    = agrupar("Dia").rename(columns={"Dia": "Data"})
 
-    # Meses dentro da semana (legenda adicional)
     if "Semana" in semanal.columns and "Data" in df.columns:
         meses_semanais = (
             df.groupby("SemanaInicioDt")["Data"]
@@ -84,7 +82,6 @@ def exibir_tabela(df: pd.DataFrame, titulo: Optional[str] = None) -> None:
 
     df = df.reset_index(drop=True)
 
-    # Ordenar dias da semana, se necessário
     if titulo == "Dia da Semana" and "DiaSemana" in df.columns:
         df["DiaSemana"] = pd.Categorical(
             df["DiaSemana"],
@@ -96,7 +93,6 @@ def exibir_tabela(df: pd.DataFrame, titulo: Optional[str] = None) -> None:
         )
         df = df.sort_values("DiaSemana")
 
-    # Formatação de colunas monetárias
     df["TotalVenda"] = df["TotalVenda"].map(formatar_moeda_brasileira)
     df["MediaPorCliente"] = df["MediaPorCliente"].map(formatar_moeda_brasileira)
 
@@ -108,7 +104,12 @@ def exibir_tabela(df: pd.DataFrame, titulo: Optional[str] = None) -> None:
 
 total_clientes = df_vendas_agrupado["Cliente"].nunique()
 total_vendas = df_vendas_agrupado["TotalVenda"].sum()
-ticket_medio = total_vendas / total_clientes
+
+# Verificação segura antes da divisão
+if total_clientes and not math.isnan(total_clientes) and total_clientes != 0:
+    ticket_medio = total_vendas / total_clientes
+else:
+    ticket_medio = 0
 
 col1, col2, col3 = st.columns(3)
 col1.metric("Total de Clientes", total_clientes)
